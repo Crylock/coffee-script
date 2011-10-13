@@ -79,7 +79,7 @@ exports.Base = class Base
   makeReturn: (res) ->
     me = @unwrapAll()
     if res
-      new Call new Literal("#{res}.push"), [me]
+      new Call new Literal("#{res}['push']"), [me]
     else
       new Return me
 
@@ -248,7 +248,7 @@ exports.Block = class Block extends Base
     o.level  = LEVEL_TOP
     @spaced  = yes
     code     = @compileWithDeclarations o
-    if o.bare then code else "(function() {\n#{code}\n}).call(this);\n"
+    if o.bare then code else "(function() {\n#{code}\n})['call'](this);\n"
 
   # Compile the expressions body for the contents of a function, with
   # declarations of all inner variables pushed up to the top.
@@ -488,7 +488,7 @@ exports.Call = class Call extends Base
       accesses.push new Access new Literal name
       (new Value (new Literal method.klass), accesses).compile o
     else
-      "#{name}.__super__.constructor"
+      "#{name}['__super__']['constructor']"
 
   # Soaked chained invocations unfold into if/else ternary structures.
   unfoldSoak: (o) ->
@@ -548,27 +548,27 @@ exports.Call = class Call extends Base
     args = @filterImplicitObjects @args
     args = (arg.compile o, LEVEL_LIST for arg in args).join ', '
     if @isSuper
-      @superReference(o) + ".call(this#{ args and ', ' + args })"
+      @superReference(o) + "['call'](this#{ args and ', ' + args })"
     else
       (if @isNew then 'new ' else '') + @variable.compile(o, LEVEL_ACCESS) + "(#{args})"
 
   # `super()` is converted into a call against the superclass's implementation
   # of the current function.
   compileSuper: (args, o) ->
-    "#{@superReference(o)}.call(this#{ if args.length then ', ' else '' }#{args})"
+    "#{@superReference(o)}['call'](this#{ if args.length then ', ' else '' }#{args})"
 
   # If you call a function with a splat, it's converted into a JavaScript
   # `.apply()` call to allow an array of arguments to be passed.
   # If it's a constructor, then things get real tricky. We have to inject an
   # inner constructor in order to be able to pass the varargs.
   compileSplat: (o, splatArgs) ->
-    return "#{ @superReference o }.apply(this, #{splatArgs})" if @isSuper
+    return "#{ @superReference o }['apply'](this, #{splatArgs})" if @isSuper
     if @isNew
       idt = @tab + TAB
       return """
         (function(func, args, ctor) {
-        #{idt}ctor.prototype = func.prototype;
-        #{idt}var child = new ctor, result = func.apply(child, args);
+        #{idt}ctor['prototype'] = func['prototype'];
+        #{idt}var child = new ctor, result = func['apply'](child, args);
         #{idt}return typeof result === "object" ? result : child;
         #{@tab}})(#{ @variable.compile o, LEVEL_LIST }, #{splatArgs}, function() {})
       """
@@ -584,7 +584,7 @@ exports.Call = class Call extends Base
         fun += name.compile o
       else
         ref = 'null'
-    "#{fun}.apply(#{ref}, #{splatArgs})"
+    "#{fun}['apply'](#{ref}, #{splatArgs})"
 
 #### Extends
 
@@ -707,10 +707,10 @@ exports.Range = class Range extends Base
       vars    = "#{i} = #{@fromC}" + if @toC isnt @toVar then ", #{@toC}" else ''
       cond    = "#{@fromVar} <= #{@toVar}"
       body    = "var #{vars}; #{cond} ? #{i} <#{@equals} #{@toVar} : #{i} >#{@equals} #{@toVar}; #{cond} ? #{i}++ : #{i}--"
-    post   = "{ #{result}.push(#{i}); }\n#{idt}return #{result};\n#{o.indent}"
+    post   = "{ #{result}['push'](#{i}); }\n#{idt}return #{result};\n#{o.indent}"
     hasArgs = (node) -> node?.contains (n) -> n instanceof Literal and n.value is 'arguments' and not n.asKey
     args   = ', arguments' if hasArgs(@from) or hasArgs(@to)
-    "(function() {#{pre}\n#{idt}for (#{body})#{post}}).apply(this#{args ? ''})"
+    "(function() {#{pre}\n#{idt}for (#{body})#{post}})['apply'](this#{args ? ''})"
 
 #### Slice
 
@@ -738,7 +738,7 @@ exports.Slice = class Slice extends Base
         (+compiled + 1).toString()
       else
         "#{compiled} + 1 || 9e9"
-    ".slice(#{ fromStr }#{ toStr or '' })"
+    "['slice'](#{ fromStr }#{ toStr or '' })"
 
 #### Obj
 
@@ -891,8 +891,8 @@ exports.Class = class Class extends Base
   ensureConstructor: (name) ->
     if not @ctor
       @ctor = new Code
-      @ctor.body.push new Literal "#{name}.__super__.constructor.apply(this, arguments)" if @parent
-      @ctor.body.push new Literal "#{@externalCtor}.apply(this, arguments)" if @externalCtor
+      @ctor.body.push new Literal "#{name}['__super__']['constructor']['apply'](this, arguments)" if @parent
+      @ctor.body.push new Literal "#{@externalCtor}['apply'](this, arguments)" if @externalCtor
       @body.expressions.unshift @ctor
     @ctor.ctor     = @ctor.name = name
     @ctor.klass    = null
@@ -1018,10 +1018,10 @@ exports.Assign = class Assign extends Base
       if not splat and obj instanceof Splat
         name = obj.name.unwrap().value
         obj = obj.unwrap()
-        val = "#{olen} <= #{vvar}.length ? #{ utility 'slice' }.call(#{vvar}, #{i}"
+        val = "#{olen} <= #{vvar}['length'] ? #{ utility 'slice' }['call'](#{vvar}, #{i}"
         if rest = olen - i - 1
           ivar = o.scope.freeVariable 'i'
-          val += ", #{ivar} = #{vvar}.length - #{rest}) : (#{ivar} = #{i}, [])"
+          val += ", #{ivar} = #{vvar}['length'] - #{rest}) : (#{ivar} = #{i}, [])"
         else
           val += ") : []"
         val   = new Literal val
@@ -1069,7 +1069,7 @@ exports.Assign = class Assign extends Base
     else
       to = "9e9"
     [valDef, valRef] = @value.cache o, LEVEL_LIST
-    code = "[].splice.apply(#{name}, [#{fromDecl}, #{to}].concat(#{valDef})), #{valRef}"
+    code = "[]['splice']['apply'](#{name}, [#{fromDecl}, #{to}]['concat'](#{valDef})), #{valRef}"
     if o.level > LEVEL_TOP then "(#{code})" else code
 
 #### Code
@@ -1201,16 +1201,16 @@ exports.Splat = class Splat extends Base
     if list.length is 1
       code = list[0].compile o, LEVEL_LIST
       return code if apply
-      return "#{ utility 'slice' }.call(#{code})"
+      return "#{ utility 'slice' }['call'](#{code})"
     args = list[index..]
     for node, i in args
       code = node.compile o, LEVEL_LIST
       args[i] = if node instanceof Splat
-      then "#{ utility 'slice' }.call(#{code})"
+      then "#{ utility 'slice' }['call'](#{code})"
       else "[#{code}]"
-    return args[0] + ".concat(#{ args[1..].join ', ' })" if index is 0
+    return args[0] + "['concat'](#{ args[1..].join ', ' })" if index is 0
     base = (node.compile o, LEVEL_LIST for node in list[0...index])
-    "[#{ base.join ', ' }].concat(#{ args.join ', ' })"
+    "[#{ base.join ', ' }]['concat'](#{ args.join ', ' })"
 
 #### While
 
@@ -1418,7 +1418,7 @@ exports.In = class In extends Base
 
   compileLoopTest: (o) ->
     [sub, ref] = @object.cache o, LEVEL_LIST
-    code = utility('indexOf') + ".call(#{ @array.compile o, LEVEL_LIST }, #{ref}) " +
+    code = utility('indexOf') + "['call'](#{ @array.compile o, LEVEL_LIST }, #{ref}) " +
            if @negated then '< 0' else '>= 0'
     return code if sub is ref
     code = sub + ', ' + code
@@ -1587,7 +1587,7 @@ exports.For = class For extends While
         namePart   = "#{name} = #{svar}[#{ivar}]"
       unless @object
         lvar       = scope.freeVariable 'len'
-        forVarPart = "#{ivar} = 0, #{lvar} = #{svar}.length" + if @step then ", #{stepvar} = #{@step.compile(o, LEVEL_OP)}" else ''
+        forVarPart = "#{ivar} = 0, #{lvar} = #{svar}['length']" + if @step then ", #{stepvar} = #{@step.compile(o, LEVEL_OP)}" else ''
         stepPart   = if @step then "#{ivar} += #{stepvar}" else "#{ivar}++"
         forPart    = "#{forVarPart}; #{ivar} < #{lvar}; #{stepPart}"
     if @returns
@@ -1605,7 +1605,7 @@ exports.For = class For extends While
     varPart     = "\n#{idt1}#{namePart};" if namePart
     if @object
       forPart   = "#{ivar} in #{svar}"
-      guardPart = "\n#{idt1}if (!#{utility 'hasProp'}.call(#{svar}, #{ivar})) continue;" if @own
+      guardPart = "\n#{idt1}if (!#{utility 'hasProp'}['call'](#{svar}, #{ivar})) continue;" if @own
     body        = body.compile merge(o, indent: idt1), LEVEL_TOP
     body        = '\n' + body + '\n' if body
     """
@@ -1807,22 +1807,22 @@ UTILITIES =
   # Correctly set up a prototype chain for inheritance, including a reference
   # to the superclass for `super()` calls, and copies of any static properties.
   extends: -> """
-    function(child, parent) { for (var key in parent) { if (#{utility 'hasProp'}.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor; child.__super__ = parent.prototype; return child; }
+    function(child, parent) { for (var key in parent) { if (#{utility 'hasProp'}['call'](parent, key)) child[key] = parent[key]; } function ctor() { this['constructor'] = child; } ctor['prototype'] = parent['prototype']; child['prototype'] = new ctor; child['__super__'] = parent['prototype']; return child; }
   """
 
   # Create a function bound to the current value of "this".
   bind: -> '''
-    function(fn, me){ return function(){ return fn.apply(me, arguments); }; }
+    function(fn, me){ return function(){ return fn['apply'](me, arguments); }; }
   '''
 
   # Discover if an item is in an array.
   indexOf: -> """
-    Array.prototype.indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (#{utility 'hasProp'}.call(this, i) && this[i] === item) return i; } return -1; }
+    Array['prototype']['indexOf'] || function(item) { for (var i = 0, l = this['length']; i < l; i++) { if (#{utility 'hasProp'}['call'](this, i) && this[i] === item) return i; } return -1; }
   """
 
   # Shortcuts to speed up the lookup time for native functions.
-  hasProp: -> 'Object.prototype.hasOwnProperty'
-  slice  : -> 'Array.prototype.slice'
+  hasProp: -> "Object['prototype']['hasOwnProperty']"
+  slice  : -> "Array['prototype']['slice']"
 
 # Levels indicate a node's position in the AST. Useful for knowing if
 # parens are necessary or superfluous.
